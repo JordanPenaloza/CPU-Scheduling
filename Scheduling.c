@@ -30,25 +30,22 @@ int main() {
         return 1;
     }
     
-    // Read algorithm and possibly time quantum.
+    // Read the first line and remove any newline characters.
     char firstLine[100];
     if (fgets(firstLine, sizeof(firstLine), fp) == NULL) {
         printf("Error reading algorithm line\n");
         fclose(fp);
         return 1;
     }
-    firstLine[strcspn(firstLine, "\r\n")] = 0;  // Remove newline
+    firstLine[strcspn(firstLine, "\r\n")] = '\0';
     
+    // Use sscanf to extract the algorithm name and (if present) the time quantum.
     char algorithm[50];
     int timeQuantum = 0;
-    if (strncmp(firstLine, "RR", 2) == 0) {
-        char *token = strtok(firstLine, " ");
-        strcpy(algorithm, token);
-        token = strtok(NULL, " ");
-        if (token != NULL)
-            timeQuantum = atoi(token);
-    } else {
-        strcpy(algorithm, firstLine);
+    if (sscanf(firstLine, "%s %d", algorithm, &timeQuantum) < 1) {
+        printf("Error parsing the algorithm line\n");
+        fclose(fp);
+        return 1;
     }
     
     int numProcesses;
@@ -282,7 +279,7 @@ void simulatePriorityPreemptive(Process processes[], int numProcesses, FILE *out
             }
         }
         if (idx == -1) {
-            currentTime++; // Simply increment time if no process is ready.
+            currentTime++; // Increment time if no process is ready.
             continue;
         }
         if (lastSelectedIndex != idx) {
