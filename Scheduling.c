@@ -9,27 +9,28 @@ typedef struct {
     int arrivalTime;
     int cpuBurst;
     int priority;
-    int remainingBurst; // used for RR and preemptive scheduling
+    int remainingBurst; // Used for RR and preemptive scheduling.
     int finishTime;
     int waitingTime;
-    int completed;    // used for SJF, PR_noPREMP, and PR_withPREMP (0: not completed, 1: completed)
+    int completed;    // 0: not completed, 1: completed.
 } Process;
 
 // Function prototypes.
+void resetProcesses(Process processes[], int numProcesses);
 void simulateRoundRobin(Process processes[], int numProcesses, int timeQuantum, FILE *out);
 void simulateSJF(Process processes[], int numProcesses, FILE *out);
 void simulatePriorityNoPreemptive(Process processes[], int numProcesses, FILE *out);
 void simulatePriorityPreemptive(Process processes[], int numProcesses, FILE *out);
+int compareArrivalTime(const void *a, const void *b);
 
 int main() {
-    // Open the input file.
     FILE *fp = fopen("input.txt", "r");
     if (fp == NULL) {
         printf("Error opening input.txt\n");
         return 1;
     }
     
-    // Read the first line (algorithm and possibly time quantum).
+    // Read algorithm and possibly time quantum.
     char firstLine[100];
     if (fgets(firstLine, sizeof(firstLine), fp) == NULL) {
         printf("Error reading algorithm line\n");
@@ -40,20 +41,16 @@ int main() {
     
     char algorithm[50];
     int timeQuantum = 0;
-    
-    // Check if the algorithm is RR (Round Robin). For RR, first line looks like "RR 3"
     if (strncmp(firstLine, "RR", 2) == 0) {
         char *token = strtok(firstLine, " ");
-        strcpy(algorithm, token);  // algorithm now holds "RR"
+        strcpy(algorithm, token);
         token = strtok(NULL, " ");
-        if (token != NULL) {
+        if (token != NULL)
             timeQuantum = atoi(token);
-        }
     } else {
         strcpy(algorithm, firstLine);
     }
     
-    // Read the number of processes.
     int numProcesses;
     if (fscanf(fp, "%d", &numProcesses) != 1) {
         printf("Error reading number of processes\n");
@@ -61,7 +58,6 @@ int main() {
         return 1;
     }
     
-    // Allocate memory for the processes.
     Process *processes = (Process *)malloc(numProcesses * sizeof(Process));
     if (processes == NULL) {
         printf("Memory allocation failed\n");
@@ -69,14 +65,13 @@ int main() {
         return 1;
     }
     
-    // Read each process's details and initialize simulation-specific fields.
     for (int i = 0; i < numProcesses; i++) {
         if (fscanf(fp, "%d %d %d %d", 
                    &processes[i].processNumber,
                    &processes[i].arrivalTime,
                    &processes[i].cpuBurst,
                    &processes[i].priority) != 4) {
-            printf("Error reading process data for process %d\n", i + 1);
+            printf("Error reading process data for process %d\n", i+1);
             free(processes);
             fclose(fp);
             return 1;
@@ -84,11 +79,13 @@ int main() {
         processes[i].remainingBurst = processes[i].cpuBurst;
         processes[i].finishTime = 0;
         processes[i].waitingTime = 0;
-        processes[i].completed = 0;  // Initialize completed flag
+        processes[i].completed = 0;
     }
     fclose(fp);
     
-    // Open output file for writing.
+    // Sort processes by arrival time.
+    qsort(processes, numProcesses, sizeof(Process), compareArrivalTime);
+    
     FILE *out = fopen("output.txt", "w");
     if (out == NULL) {
         printf("Error opening output.txt for writing\n");
@@ -96,7 +93,10 @@ int main() {
         return 1;
     }
     
-    // Depending on the algorithm, write the header and call the appropriate simulation.
+    // Reset simulation fields.
+    resetProcesses(processes, numProcesses);
+    
+    // Run the chosen scheduling algorithm.
     if (strcmp(algorithm, "RR") == 0) {
         fprintf(out, "RR %d\n", timeQuantum);
         simulateRoundRobin(processes, numProcesses, timeQuantum, out);
@@ -111,13 +111,10 @@ int main() {
         simulatePriorityPreemptive(processes, numProcesses, out);
     } else {
         fprintf(out, "%s\n", algorithm);
-        // Other algorithms can be implemented similarly.
     }
     
-    // Compute and write the average waiting time.
     double totalWaitingTime = 0;
     for (int i = 0; i < numProcesses; i++) {
-        // Waiting Time = Finish Time - Arrival Time - CPU Burst.
         int wt = processes[i].finishTime - processes[i].arrivalTime - processes[i].cpuBurst;
         totalWaitingTime += wt;
     }
@@ -129,15 +126,29 @@ int main() {
     return 0;
 }
 
+int compareArrivalTime(const void *a, const void *b) {
+    Process *p1 = (Process *)a;
+    Process *p2 = (Process *)b;
+    return p1->arrivalTime - p2->arrivalTime;
+}
+
+void resetProcesses(Process processes[], int numProcesses) {
+    for (int i = 0; i < numProcesses; i++) {
+        processes[i].remainingBurst = processes[i].cpuBurst;
+        processes[i].finishTime = 0;
+        processes[i].waitingTime = 0;
+        processes[i].completed = 0;
+    }
+}
+
+// -------------------- Simulation Functions --------------------
+
 // Round Robin Simulation Function.
 void simulateRoundRobin(Process processes[], int numProcesses, int timeQuantum, FILE *out) {
-    int currentTime = 0;
-    int finishedCount = 0;
-    int queue[QUEUE_SIZE];
-    int front = 0, rear = 0;
-    int inQueue[1000] = {0};  // 0: not in queue, 1: in queue
+    int currentTime = 0, finishedCount = 0;
+    int queue[QUEUE_SIZE], front = 0, rear = 0;
+    int inQueue[1000] = {0};
 
-    // Enqueue processes that have arrived at time 0.
     for (int i = 0; i < numProcesses; i++) {
         if (processes[i].arrivalTime <= currentTime && processes[i].remainingBurst > 0) {
             queue[rear] = i;
@@ -146,198 +157,145 @@ void simulateRoundRobin(Process processes[], int numProcesses, int timeQuantum, 
         }
     }
     
-    // Simulation loop.
     while (finishedCount < numProcesses) {
-        // If the queue is empty, increment time until a process arrives.
         if (front == rear) {
-            currentTime++;
+            int minArrival = 99999999;
             for (int i = 0; i < numProcesses; i++) {
-                if (processes[i].arrivalTime == currentTime && processes[i].remainingBurst > 0 && !inQueue[i]) {
-                    queue[rear] = i;
-                    rear = (rear + 1) % QUEUE_SIZE;
-                    inQueue[i] = 1;
-                }
+                if (processes[i].remainingBurst > 0 && processes[i].arrivalTime < minArrival)
+                    minArrival = processes[i].arrivalTime;
             }
+            currentTime = (minArrival > currentTime) ? minArrival : currentTime+1;
             continue;
         }
-        
-        // Dequeue the next process.
         int i = queue[front];
         front = (front + 1) % QUEUE_SIZE;
         inQueue[i] = 0;
-        
-        // Log the scheduling event (simulate the Gantt chart).
         fprintf(out, "%d\t%d\n", currentTime, processes[i].processNumber);
-        
-        // Determine how long the process will run.
         int execTime = (processes[i].remainingBurst > timeQuantum) ? timeQuantum : processes[i].remainingBurst;
         processes[i].remainingBurst -= execTime;
         currentTime += execTime;
-        
-        // Enqueue any new arrivals during this time slice.
         for (int j = 0; j < numProcesses; j++) {
             if (processes[j].arrivalTime > (currentTime - execTime) &&
                 processes[j].arrivalTime <= currentTime &&
-                processes[j].remainingBurst > 0 &&
-                !inQueue[j]) {
+                processes[j].remainingBurst > 0 && !inQueue[j]) {
                 queue[rear] = j;
                 rear = (rear + 1) % QUEUE_SIZE;
                 inQueue[j] = 1;
             }
         }
-        
-        // If the process isn't finished, re-enqueue it.
         if (processes[i].remainingBurst > 0) {
             queue[rear] = i;
             rear = (rear + 1) % QUEUE_SIZE;
             inQueue[i] = 1;
         } else {
-            // Process finished; record its finish time.
             processes[i].finishTime = currentTime;
             finishedCount++;
         }
     }
 }
 
-// Shortest Job First (SJF) Simulation Function (non-preemptive).
+// Shortest Job First (Non-preemptive) Simulation Function.
 void simulateSJF(Process processes[], int numProcesses, FILE *out) {
-    int currentTime = 0;
-    int completedCount = 0;
-    
-    // Run until all processes are completed.
+    int currentTime = 0, completedCount = 0;
     while (completedCount < numProcesses) {
-        int idx = -1;
-        int minBurst = 1e9;  // A very large number.
-        
-        // Select process with the smallest CPU burst among those that have arrived.
+        int idx = -1, minBurst = 99999999;
         for (int i = 0; i < numProcesses; i++) {
             if (!processes[i].completed && processes[i].arrivalTime <= currentTime) {
                 if (processes[i].cpuBurst < minBurst) {
                     minBurst = processes[i].cpuBurst;
                     idx = i;
                 } else if (processes[i].cpuBurst == minBurst && idx != -1) {
-                    // Tie-breaker: earlier arrival time.
-                    if (processes[i].arrivalTime < processes[idx].arrivalTime) {
+                    if (processes[i].arrivalTime < processes[idx].arrivalTime ||
+                        (processes[i].arrivalTime == processes[idx].arrivalTime &&
+                         processes[i].processNumber < processes[idx].processNumber))
+                    {
                         idx = i;
-                    } else if (processes[i].arrivalTime == processes[idx].arrivalTime) {
-                        // Tie-breaker: lower process number.
-                        if (processes[i].processNumber < processes[idx].processNumber) {
-                            idx = i;
-                        }
                     }
                 }
             }
         }
-        
-        // If no process is available yet, increment time.
         if (idx == -1) {
-            currentTime++;
+            int minArrival = 99999999;
+            for (int i = 0; i < numProcesses; i++) {
+                if (!processes[i].completed && processes[i].arrivalTime < minArrival)
+                    minArrival = processes[i].arrivalTime;
+            }
+            currentTime = (minArrival > currentTime) ? minArrival : currentTime+1;
             continue;
         }
-        
-        // Log the scheduling event.
         fprintf(out, "%d\t%d\n", currentTime, processes[idx].processNumber);
-        
-        // Run the chosen process to completion.
         currentTime += processes[idx].cpuBurst;
         processes[idx].finishTime = currentTime;
         processes[idx].completed = 1;
         completedCount++;
-        
-        // Calculate waiting time for this process.
         processes[idx].waitingTime = processes[idx].finishTime - processes[idx].arrivalTime - processes[idx].cpuBurst;
     }
 }
 
-// Priority Scheduling without Preemption (PR_noPREMP) Simulation Function.
+// Priority Scheduling without Preemption Simulation Function.
 void simulatePriorityNoPreemptive(Process processes[], int numProcesses, FILE *out) {
-    int currentTime = 0;
-    int completedCount = 0;
-    
-    // Run until all processes are completed.
+    int currentTime = 0, completedCount = 0;
     while (completedCount < numProcesses) {
-        int idx = -1;
-        int bestPriority = 1e9; // A large number (lower value means higher priority).
-        
-        // Select the process with the highest priority (lowest priority value) among those that have arrived.
+        int idx = -1, bestPriority = 99999999;
         for (int i = 0; i < numProcesses; i++) {
-            if (!processes[i].completed && processes[i].arrivalTime <= currentTime) {
-                if (processes[i].priority < bestPriority) {
+            if (processes[i].remainingBurst > 0 && processes[i].arrivalTime <= currentTime) {
+                if (idx == -1 || processes[i].priority < bestPriority ||
+                    (processes[i].priority == bestPriority && processes[i].processNumber < processes[idx].processNumber))
+                {
                     bestPriority = processes[i].priority;
                     idx = i;
-                } else if (processes[i].priority == bestPriority && idx != -1) {
-                    // Tie-breaker: lower process number.
-                    if (processes[i].processNumber < processes[idx].processNumber) {
-                        idx = i;
-                    }
                 }
             }
         }
-        
-        // If no process is available, increment time.
         if (idx == -1) {
-            currentTime++;
+            int minArrival = 99999999;
+            for (int i = 0; i < numProcesses; i++) {
+                if (processes[i].remainingBurst > 0 && processes[i].arrivalTime < minArrival)
+                    minArrival = processes[i].arrivalTime;
+            }
+            currentTime = (minArrival > currentTime) ? minArrival : currentTime+1;
             continue;
         }
-        
-        // Log the scheduling event.
         fprintf(out, "%d\t%d\n", currentTime, processes[idx].processNumber);
-        
-        // Run the chosen process to completion.
         currentTime += processes[idx].cpuBurst;
         processes[idx].finishTime = currentTime;
+        processes[idx].remainingBurst = 0;
         processes[idx].completed = 1;
         completedCount++;
-        
-        // Calculate waiting time for this process.
         processes[idx].waitingTime = processes[idx].finishTime - processes[idx].arrivalTime - processes[idx].cpuBurst;
     }
 }
 
 // Priority Scheduling with Preemption (PR_withPREMP) Simulation Function.
 void simulatePriorityPreemptive(Process processes[], int numProcesses, FILE *out) {
-    int currentTime = 0;
-    int completedCount = 0;
-    int currentProcess = -1;  // Index of currently running process.
-    
-    // Simulate one time unit at a time.
+    int currentTime = 0, completedCount = 0;
+    int lastSelectedIndex = -1;
     while (completedCount < numProcesses) {
-        int idx = -1;
-        int bestPriority = 1e9;  // A large number.
-        
-        // Among processes that have arrived and are not completed, choose the one with the highest priority.
+        int idx = -1, bestPriority = 99999999;
         for (int i = 0; i < numProcesses; i++) {
-            if (!processes[i].completed && processes[i].arrivalTime <= currentTime) {
+            if (!processes[i].completed && processes[i].arrivalTime <= currentTime && processes[i].remainingBurst > 0) {
                 if (idx == -1 || processes[i].priority < bestPriority ||
-                   (processes[i].priority == bestPriority && processes[i].processNumber < processes[idx].processNumber)) {
+                    (processes[i].priority == bestPriority && processes[i].processNumber < processes[idx].processNumber)) {
                     idx = i;
                     bestPriority = processes[i].priority;
                 }
             }
         }
-        
-        // If no process is ready, increment time.
         if (idx == -1) {
-            currentTime++;
+            currentTime++; // Simply increment time if no process is ready.
             continue;
         }
-        
-        // If the selected process is different from the currently running process, log the context switch.
-        if (currentProcess != idx) {
+        if (lastSelectedIndex != idx) {
             fprintf(out, "%d\t%d\n", currentTime, processes[idx].processNumber);
-            currentProcess = idx;
+            lastSelectedIndex = idx;
         }
-        
-        // Execute the selected process for one time unit.
         processes[idx].remainingBurst--;
         currentTime++;
-        
-        // Check if the process has finished.
         if (processes[idx].remainingBurst == 0) {
             processes[idx].finishTime = currentTime;
             processes[idx].completed = 1;
             completedCount++;
-            currentProcess = -1; // Reset current process.
+            lastSelectedIndex = -1;
         }
     }
 }
