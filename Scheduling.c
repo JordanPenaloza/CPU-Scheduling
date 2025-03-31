@@ -11,9 +11,13 @@ typedef struct {
     int priority;
     int remainingBurst;
     int finishTime;
+    int waitingTime;
+    int completed;   // used for SJF
 } Process;
 
+// Function prototypes
 void simulateRoundRobin(Process processes[], int numProcesses, int timeQuantum, FILE *out);
+void simulateSJF(Process processes[], int numProcesses, FILE *out);
 
 int main() {
     // Open the input file.
@@ -63,7 +67,7 @@ int main() {
         return 1;
     }
     
-    // Read each process's details.
+    // Read each process's details and initialize simulation-specific fields.
     for (int i = 0; i < numProcesses; i++) {
         if (fscanf(fp, "%d %d %d %d", 
                    &processes[i].processNumber,
@@ -75,9 +79,10 @@ int main() {
             fclose(fp);
             return 1;
         }
-        // Initialize simulation-specific fields.
         processes[i].remainingBurst = processes[i].cpuBurst;
         processes[i].finishTime = 0;
+        processes[i].waitingTime = 0;
+        processes[i].completed = 0;   // IMPORTANT: Initialize completed flag for SJF.
     }
     fclose(fp);
     
@@ -89,18 +94,22 @@ int main() {
         return 1;
     }
     
-    // Write the algorithm line to the output.
+    // Check which algorithm to simulate.
     if (strcmp(algorithm, "RR") == 0) {
         fprintf(out, "RR %d\n", timeQuantum);
         simulateRoundRobin(processes, numProcesses, timeQuantum, out);
+    } else if (strcmp(algorithm, "SJF") == 0) {
+        fprintf(out, "SJF\n");
+        simulateSJF(processes, numProcesses, out);
     } else {
         fprintf(out, "%s\n", algorithm);
-        // For now, only RR is implemented.
+        // Other algorithms can be added similarly.
     }
     
     // Compute and write the average waiting time.
     double totalWaitingTime = 0;
     for (int i = 0; i < numProcesses; i++) {
+        // Waiting time = Finish time - Arrival time - CPU burst.
         int waitingTime = processes[i].finishTime - processes[i].arrivalTime - processes[i].cpuBurst;
         totalWaitingTime += waitingTime;
     }
@@ -120,7 +129,7 @@ void simulateRoundRobin(Process processes[], int numProcesses, int timeQuantum, 
     int front = 0, rear = 0;
     int inQueue[1000] = {0};  // Flags: 0 = not in queue, 1 = in queue
     
-    // Enqueue all processes that have arrived at time 0.
+    // Enqueue processes that have arrived at time 0.
     for (int i = 0; i < numProcesses; i++) {
         if (processes[i].arrivalTime <= currentTime && processes[i].remainingBurst > 0) {
             queue[rear] = i;
@@ -149,10 +158,10 @@ void simulateRoundRobin(Process processes[], int numProcesses, int timeQuantum, 
         front = (front + 1) % QUEUE_SIZE;
         inQueue[i] = 0;
         
-        // Record the scheduling event (simulate the Gantt chart).
+        // Log the scheduling event (Gantt chart format).
         fprintf(out, "%d\t%d\n", currentTime, processes[i].processNumber);
         
-        // Determine how long the process will run.
+        // Determine execution time.
         int execTime = (processes[i].remainingBurst > timeQuantum) ? timeQuantum : processes[i].remainingBurst;
         processes[i].remainingBurst -= execTime;
         currentTime += execTime;
@@ -179,5 +188,55 @@ void simulateRoundRobin(Process processes[], int numProcesses, int timeQuantum, 
             processes[i].finishTime = currentTime;
             finishedCount++;
         }
+    }
+}
+
+// Shortest Job First (SJF) Simulation Function (Non-preemptive)
+void simulateSJF(Process processes[], int numProcesses, FILE *out) {
+    int currentTime = 0;
+    int completedCount = 0;
+    
+    // Loop until all processes are completed.
+    while (completedCount < numProcesses) {
+        int idx = -1;
+        int minBurst = 1e9;  // a large number
+        
+        // Find the process with the smallest burst among those that have arrived and are not completed.
+        for (int i = 0; i < numProcesses; i++) {
+            if (!processes[i].completed && processes[i].arrivalTime <= currentTime) {
+                if (processes[i].cpuBurst < minBurst) {
+                    minBurst = processes[i].cpuBurst;
+                    idx = i;
+                } else if (processes[i].cpuBurst == minBurst && idx != -1) {
+                    // Tie-breaker: earlier arrival time.
+                    if (processes[i].arrivalTime < processes[idx].arrivalTime) {
+                        idx = i;
+                    } else if (processes[i].arrivalTime == processes[idx].arrivalTime) {
+                        // Tie-breaker: lower process number.
+                        if (processes[i].processNumber < processes[idx].processNumber) {
+                            idx = i;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // If no process is available, increment time.
+        if (idx == -1) {
+            currentTime++;
+            continue;
+        }
+        
+        // Log the scheduling event.
+        fprintf(out, "%d\t%d\n", currentTime, processes[idx].processNumber);
+        
+        // Run the selected process to completion.
+        currentTime += processes[idx].cpuBurst;
+        processes[idx].finishTime = currentTime;
+        processes[idx].completed = 1;
+        completedCount++;
+        
+        // Calculate waiting time for this process.
+        processes[idx].waitingTime = processes[idx].finishTime - processes[idx].arrivalTime - processes[idx].cpuBurst;
     }
 }
