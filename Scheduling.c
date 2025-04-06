@@ -1,3 +1,9 @@
+// CSC139-01
+// Scheduling.c by Jordan Penaloza
+// Put input.txt in the same directory
+// Usage: gcc Scheduling.c -o Scheduling
+// ./Scheduling
+// Tested on ECS Linux coding server
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
